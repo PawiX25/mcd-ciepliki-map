@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Mapa Cieplików</title>
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+    <style>
+        :root {
+            --bg-color: #050505;
+            --card-bg: #141414;
+            --border-color: #2a2a2a;
+            --text-primary: #EDEDED;
+            --text-secondary: #999999;
+            --accent-color: #FF4400; 
+            --radius: 12px;
+            --shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+            --safe-top: env(safe-area-inset-top, 20px);
+            --safe-bottom: env(safe-area-inset-bottom, 20px);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            overflow: hidden;
+            height: 100vh;
+            width: 100vw;
+            overscroll-behavior: none;
+        }
+
+        #map {
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+            background: #050505;
+        }
+
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(5, 5, 5, 0.98);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+            transition: opacity 0.4s ease;
+        }
+
+        .loading-overlay.hidden { opacity: 0; pointer-events: none; }
+
+        .loading-title {
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 24px;
+            color: #fff;
+            letter-spacing: -0.5px;
+        }
+
+        .progress-container {
+            width: 200px;
+            height: 6px;
+            background: #222;
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background: var(--accent-color);
+            width: 0%;
+            transition: width 0.1s linear;
+        }
+
+        #loadingText {
+            margin-top: 16px;
+            color: var(--text-secondary);
+            font-size: 13px;
+            font-family: monospace;
+        }
+
+        .ui-overlay {
+            position: absolute;
+            top: calc(var(--safe-top) + 10px);
+            left: 16px;
+            right: 16px;
+            pointer-events: none;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        @media (max-width: 600px) {
+            .ui-overlay {
+                top: max(20px, env(safe-area-inset-top)); 
+                left: 16px;
+                right: 16px;
+                flex-direction: column; 
+            }
+            .controls {
+                bottom: max(30px, env(safe-area-inset-bottom));
+                right: 16px;
+            }
+        }
+
+        .search-box {
+            pointer-events: auto;
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            display: flex;
+            width: 100%;
+            max-width: 400px;
+        }
+
+        .search-input {
+            flex: 1;
+            background: transparent;
+            border: none;
+            color: var(--text-primary);
+            font-family: inherit;
+            font-size: 16px;
+            padding: 14px 16px;
+            outline: none;
+            min-width: 0;
+        }
+
+        .search-btn {
+            background: transparent;
+            border: none;
+            color: var(--accent-color);
+            padding: 0 16px;
+            cursor: pointer;
+            font-size: 18px;
+        }
+
+        .stats-card {
+            pointer-events: auto;
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius);
+            padding: 10px 16px;
+            align-self: flex-start;
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-primary);
+            box-shadow: var(--shadow);
+            backdrop-filter: blur(10px);
+        }
+
+        .controls {
+            position: absolute;
+            bottom: calc(30px + var(--safe-bottom));
+            right: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            pointer-events: auto;
+            z-index: 1000;
+        }
+
+        .fab-btn {
+            width: 52px;
+            height: 52px;
+            border-radius: 50%;
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            font-size: 24px;
+            cursor: pointer;
+            box-shadow: var(--shadow);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            -webkit-tap-highlight-color: transparent;
+            transition: transform 0.1s;
+        }
+        
+        .fab-btn:active { transform: scale(0.95); }
+        .fab-btn.active { background: var(--accent-color); color: #fff; border-color: var(--accent-color); }
+        
+        .cluster-marker {
+            border-radius: 50%;
+            color: #fff;
+            font-weight: 700;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 2px solid rgba(255,255,255,0.2);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+            background-clip: padding-box;
+        }
+
+        .cluster-small { background-color: #4CAF50; } 
+        .cluster-medium { background-color: #FFC107; color: #000; } 
+        .cluster-large { background-color: #FF4400; } 
+
+        .point-icon {
+            background: var(--accent-color);
+            border: 1.5px solid #fff;
+            border-radius: 50%;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+        }
+
+        .leaflet-popup-content-wrapper {
+            background: var(--card-bg);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+            padding: 0;
+            border-radius: 12px;
+        }
+        .leaflet-popup-content { margin: 16px; text-align: center; }
+        .leaflet-popup-tip { background: var(--card-bg); }
+        .popup-btn {
+            width: 100%;
+            padding: 10px;
+            background: #222;
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            margin-top: 10px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 13px;
+        }
+
+        @media (min-width: 600px) {
+            .ui-overlay { left: 20px; top: 20px; width: auto; }
+            .controls { right: 30px; bottom: 30px; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="loading-title">Mapa Cieplików</div>
+        <div class="progress-container">
+            <div class="progress-bar" id="progressBar"></div>
+        </div>
+        <div id="loadingText">Pobieranie bazy cieplików...</div>
+    </div>
+
+    <div class="ui-overlay">
+        <div class="search-box">
+            <input type="text" id="searchInput" class="search-input" placeholder="Szukaj miasta..." autocomplete="off">
+            <button class="search-btn" id="searchBtn">🔍</button>
+        </div>
+        <div class="stats-card">
+            <span id="pointsCount">-</span> cieplików
+        </div>
+    </div>
+
+    <div class="controls">
+        <button class="fab-btn" id="locateBtn">📍</button>
+        <button class="fab-btn" id="resetBtn">🌍</button>
+    </div>
+
+    <div id="map"></div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <script>
+        const workerCode = `
+            importScripts('https://unpkg.com/supercluster@7.1.5/dist/supercluster.min.js');
+            let index;
+            self.onmessage = function(e) {
+                if (e.data.type === 'init') {
+                    const pointsArray = new Float32Array(e.data.buffer);
+                    const features = [];
+                    for(let i=0; i<pointsArray.length; i+=2) {
+                        features.push({
+                            type: 'Feature',
+                            properties: { id: i/2 },
+                            geometry: { type: 'Point', coordinates: [pointsArray[i+1], pointsArray[i]] }
+                        });
+                    }
+                    index = new Supercluster({ 
+                        radius: 60,
+                        maxZoom: 17,
+                        minPoints: 2 
+                    });
+                    index.load(features);
+                    self.postMessage({ type: 'ready', count: features.length });
+                } 
+                else if (e.data.type === 'getClusters') {
+                    if (!index) return;
+                    const clusters = index.getClusters(e.data.bbox, e.data.zoom);
+                    self.postMessage({ type: 'clusters', clusters: clusters });
+                }
+                else if (e.data.type === 'getExpansion') {
+                    const zoom = index.getClusterExpansionZoom(e.data.clusterId);
+                    self.postMessage({ type: 'expansion', zoom: zoom, center: e.data.center });
+                }
+            };
+        `;
+
+        const els = {
+            overlay: document.getElementById('loadingOverlay'),
+            bar: document.getElementById('progressBar'),
+            text: document.getElementById('loadingText'),
+            count: document.getElementById('pointsCount'),
+            search: document.getElementById('searchInput'),
+            searchBtn: document.getElementById('searchBtn'),
+            locate: document.getElementById('locateBtn'),
+            reset: document.getElementById('resetBtn')
+        };
+
+        let map, worker, markersLayer, userMarker, watchId;
+        const workerBlob = new Blob([workerCode], { type: 'application/javascript' });
+
+        document.addEventListener('DOMContentLoaded', () => {
+            map = L.map('map', { 
+                zoomControl: false, 
+                attributionControl: false, 
+                preferCanvas: true,
+                minZoom: 5,
+                maxZoom: 19
+            }).setView([52.0, 19.0], 6);
+
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(map);
+            markersLayer = L.layerGroup().addTo(map);
+
+            loadData();
+
+            let timer;
+            map.on('moveend', () => {
+                clearTimeout(timer);
+                timer = setTimeout(updateMap, 100);
+            });
+        });
+
+        async function loadData() {
+            try {
+                const response = await fetch('points.bin');
+                if (!response.ok) throw new Error('Błąd pliku');
+                const buffer = await response.arrayBuffer();
+                
+                els.bar.style.width = "50%";
+                els.text.textContent = "Indeksowanie...";
+
+                worker = new Worker(URL.createObjectURL(workerBlob));
+                worker.onmessage = (e) => {
+                    if (e.data.type === 'ready') {
+                        els.bar.style.width = "100%";
+                        els.count.textContent = e.data.count.toLocaleString();
+                        els.text.textContent = "Gotowe!";
+                        setTimeout(() => {
+                            els.overlay.classList.add('hidden');
+                            updateMap();
+                        }, 400);
+                    } 
+                    else if (e.data.type === 'clusters') render(e.data.clusters);
+                    else if (e.data.type === 'expansion') map.flyTo(e.data.center, e.data.zoom, { duration: 0.6 });
+                };
+                worker.postMessage({ type: 'init', buffer: buffer }, [buffer]);
+            } catch (err) {
+                els.text.textContent = "Błąd: Brak pliku points.bin";
+                els.text.style.color = "#FF4400";
+            }
+        }
+
+        function updateMap() {
+            if (!worker) return;
+            const b = map.getBounds();
+            const z = Math.floor(map.getZoom());
+            
+            worker.postMessage({
+                type: 'getClusters',
+                bbox: [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()],
+                zoom: z
+            });
+        }
+
+        function render(clusters) {
+            const newLayer = L.layerGroup();
+            
+            for (const f of clusters) {
+                const [lng, lat] = f.geometry.coordinates;
+                const isCluster = f.properties.cluster;
+
+                if (isCluster) {
+                    const count = f.properties.point_count;
+                    let size = 40, cls = 'cluster-small';
+                    if (count > 100) { size = 50; cls = 'cluster-medium'; }
+                    if (count > 1000) { size = 60; cls = 'cluster-large'; }
+
+                    const icon = L.divIcon({
+                        html: `<div>${count >= 1000 ? (count/1000).toFixed(1)+'k' : count}</div>`,
+                        className: `cluster-marker ${cls}`,
+                        iconSize: [size, size]
+                    });
+                    
+                    const marker = L.marker([lat, lng], { icon });
+                    marker.on('click', () => {
+                        worker.postMessage({ type: 'getExpansion', clusterId: f.properties.cluster_id, center: [lat, lng] });
+                    });
+                    newLayer.addLayer(marker);
+                } else {
+                    const icon = L.divIcon({ className: 'point-icon', iconSize: [12, 12] });
+                    L.marker([lat, lng], { icon })
+                     .bindPopup(`<div style="text-align:center;"><b>Cieplik</b><br>${lat.toFixed(5)}, ${lng.toFixed(5)}<br><button class="popup-btn" onclick="window.open('https://www.google.com/maps/search/?api=1&query=${lat},${lng}')">Otwórz w Maps</button></div>`)
+                     .addTo(newLayer);
+                }
+            }
+
+            newLayer.addTo(map);
+            if (markersLayer) {
+                map.removeLayer(markersLayer);
+            }
+            markersLayer = newLayer;
+        }
+
+        els.searchBtn.onclick = async () => {
+            const q = els.search.value;
+            if(!q) return;
+            try {
+                const r = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&countrycodes=pl`);
+                const d = await r.json();
+                if(d.length) map.setView([d[0].lat, d[0].lon], 14);
+            } catch(e) {}
+        };
+
+        els.locate.onclick = () => {
+            if(watchId) { 
+                navigator.geolocation.clearWatch(watchId); 
+                watchId=null; 
+                els.locate.classList.remove('active'); 
+                if(userMarker) { userMarker.remove(); userMarker = null; }
+            }
+            else {
+                els.overlay.classList.remove('hidden');
+                els.text.textContent = "Pobieranie lokalizacji...";
+                els.bar.style.width = "100%"; 
+
+                watchId = navigator.geolocation.watchPosition(p => {
+                    els.overlay.classList.add('hidden');
+                    els.locate.classList.add('active');
+                    
+                    const ll = [p.coords.latitude, p.coords.longitude];
+                    if(!userMarker) { 
+                        userMarker = L.circleMarker(ll, {radius:8, color:'#fff', fillColor:'#007AFF', fillOpacity:1}).addTo(map); 
+                        map.setView(ll, 15); 
+                    } else {
+                        userMarker.setLatLng(ll);
+                    }
+                }, err => {
+                    console.error(err);
+                    els.overlay.classList.add('hidden'); 
+                    alert("Nie można pobrać lokalizacji. Sprawdź uprawnienia GPS.");
+                }, {
+                    enableHighAccuracy: true
+                });
+            }
+        };
+
+        els.reset.onclick = () => map.setView([52.0, 19.0], 6);
+    </script>
+</body>
+</html>
